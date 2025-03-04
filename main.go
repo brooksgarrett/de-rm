@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
@@ -35,7 +36,12 @@ func NewSocialAssistant() (*SocialAssistant, error) {
 }
 
 func (s *SocialAssistant) Chat(input string) (string, error) {
-	model := s.model.GenerativeModel("gemini-pro")
+	modelName := os.Getenv("GEMINI_MODEL")
+	if modelName == "" {
+		modelName = "models/gemini-1.5-flash"
+	}
+	glog.Infof("Using Gemini model: %s", modelName)
+	model := s.model.GenerativeModel(modelName)
 	tokResp, err := model.CountTokens(s.ctx, genai.Text(input))
 	if err != nil {
 		glog.Errorf("Error counting tokens: %v", err)
@@ -118,25 +124,48 @@ func (s *SocialAssistant) DraftEmail(to string) (string, error) {
 		}
 	}
 
-	prompt := formatEmailDraftPrompt(targetContact, targetInteraction, recentPosts)
-	response, err := s.Chat(prompt)
-	if err != nil {
-		return "", err
-	}
+	var feedback string
+	for {
+		prompt := formatEmailDraftPrompt(targetContact, targetInteraction, recentPosts, feedback)
+		response, err := s.Chat(prompt)
+		if err != nil {
+			return "", err
+		}
 
-	// Parse the response into subject and body
-	draft, err := parseEmailResponse(response)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse email response: %v", err)
-	}
+		// Parse the response into subject and body
+		draft, err := parseEmailResponse(response)
+		if err != nil {
+			return "", fmt.Errorf("failed to parse email response: %v", err)
+		}
 
-	// Create draft in Gmail
-	draft.To = to
-	if err := emailTool.SaveDraft(s.ctx, draft); err != nil {
-		return "", fmt.Errorf("failed to save draft: %v", err)
-	}
+		// Display the draft to the user
+		fmt.Println("\nProposed Email Draft:")
+		fmt.Println("===================")
+		fmt.Printf("To: %s\n", to)
+		fmt.Printf("Subject: %s\n\n", draft.Subject)
+		fmt.Println(draft.Body)
+		fmt.Println("===================")
 
-	return fmt.Sprintf("Draft saved to Gmail:\n\n%s", response), nil
+		// Ask for user approval
+		fmt.Print("\nWould you like to use this draft? (Y/N): ")
+		var approval string
+		fmt.Scanln(&approval)
+
+		if strings.ToUpper(approval) == "Y" {
+			// Create draft in Gmail
+			draft.To = to
+			if err := emailTool.SaveDraft(s.ctx, draft); err != nil {
+				return "", fmt.Errorf("failed to save draft: %v", err)
+			}
+			return fmt.Sprintf("Draft saved to Gmail:\n\n%s", response), nil
+		}
+
+		// If not approved, ask for feedback
+		fmt.Print("\nWhat would you like to change? (e.g., 'Make it more formal', 'Add more personal details'): ")
+		scanner := bufio.NewScanner(os.Stdin)
+		scanner.Scan()
+		feedback = scanner.Text()
+	}
 }
 
 func parseEmailResponse(response string) (tools.DraftEmail, error) {
@@ -163,7 +192,7 @@ func parseEmailResponse(response string) (tools.DraftEmail, error) {
 	return draft, nil
 }
 
-func formatEmailDraftPrompt(contact *config.Contact, interaction *tools.EmailInteraction, posts []tools.BlogPost) string {
+func formatEmailDraftPrompt(contact *config.Contact, interaction *tools.EmailInteraction, posts []tools.BlogPost, feedback string) string {
 	var context strings.Builder
 
 	if interaction != nil {
@@ -189,6 +218,11 @@ func formatEmailDraftPrompt(contact *config.Contact, interaction *tools.EmailInt
 		writingSample = contact.WritingSample
 	}
 
+	var feedbackSection string
+	if feedback != "" {
+		feedbackSection = fmt.Sprintf("\n\nPrevious draft was not approved. User feedback: %s\nPlease revise the email taking this feedback into account.", feedback)
+	}
+
 	return fmt.Sprintf(`Draft a friendly email to %s (%s).
 
 Here's an example of how I write emails:
@@ -206,10 +240,12 @@ Please write a natural, personal email that:
 5. Ends with a clear next step or question
 6. Uses similar greeting/closing styles as my example
 
+%s
+
 Format the response as:
 Subject: [subject]
 
-[email body]`, contact.Name, contact.Email, writingSample, context.String())
+[email body]`, contact.Name, contact.Email, writingSample, context.String(), feedbackSection)
 }
 
 func formatSocialDataPrompt(events []tools.Event, interactions []tools.EmailInteraction) string {
@@ -348,7 +384,7 @@ func main() {
 		if err != nil {
 			glog.Exitf("Failed to draft email: %v", err)
 		}
-		fmt.Println("Email Draft:")
+		fmt.Println("\nFinal Result:")
 		fmt.Println(draft)
 
 	case "catchup":
