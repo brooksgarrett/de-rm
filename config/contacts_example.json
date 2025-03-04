@@ -1,0 +1,20 @@
+[
+    {
+        "email": "example@example.com",
+        "name": "Example Person",
+        "priority": 3,
+        "rss_feed": "https://example.com/feed",
+        "writing_sample": "Hi there,\n\nI enjoyed reading your latest article about technology trends. Your insights on AI development were particularly interesting.\n\nWould you be open to discussing potential collaboration opportunities?\n\nBest regards,\nExample"
+    },
+    {
+        "email": "family@example.com",
+        "name": "Family Member",
+        "priority": 5,
+        "writing_sample": "Hello,\n\nHope you're having a great day. Would you like to catch up soon?\n\nTake care,\nExample"
+    },
+    {
+        "email": "colleague@example.com",
+        "name": "Professional Contact",
+        "priority": 2
+    }
+] 

@@ -1,0 +1,12 @@
+# Personal notes and configuration files
+GOALS.md
+NOTES.md
+
+# Privileged credentials
+*.json
+
+# Allow examples
+!config/contacts_example.json
+
+# Environment variables
+.env
